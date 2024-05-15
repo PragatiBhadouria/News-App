@@ -1,6 +1,5 @@
 package com.example.moengagenewsapp
 
-import NewsAdapter
 import android.net.ConnectivityManager
 import android.os.Build
 import android.os.Bundle
@@ -10,11 +9,17 @@ import android.view.MenuItem
 import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Observer
+import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.moengagenewsapp.data.Article
 import com.example.moengagenewsapp.databinding.ActivityMainBinding
 import com.example.moengagenewsapp.networking.NetworkCheck
 import com.example.moengagenewsapp.networking.RemoteAPI
+import com.example.moengagenewsapp.ui.MainViewModel
+import com.example.moengagenewsapp.ui.MainViewModelFactory
+import com.example.moengagenewsapp.ui.NewsAdapter
+import com.example.moengagenewsapp.ui.NewsViewPagerAdapter
 import com.google.android.gms.tasks.OnCompleteListener
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
@@ -26,10 +31,11 @@ class MainActivity : AppCompatActivity() {
         private const val TAG = "MainActivity"
     }
 
-    lateinit var adapter: NewsAdapter
-    private var articles = mutableListOf<Article>()
-    lateinit var binding: ActivityMainBinding
-    lateinit var remoteAPI: RemoteAPI
+    private lateinit var binding: ActivityMainBinding
+    private lateinit var viewModel: MainViewModel
+    private lateinit var adapter: NewsAdapter
+    private lateinit var viewPagerAdapter: NewsViewPagerAdapter
+    private val articles = mutableListOf<Article>()
 
     private val networkCheck by lazy {
         NetworkCheck(getSystemService(ConnectivityManager::class.java))
@@ -37,13 +43,12 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(getLayoutInflater())
-        setContentView(binding.getRoot())
-
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
         setSupportActionBar(binding.toolbar)
+        binding.toolbar.title = "NEWS APP"
 
         FirebaseApp.initializeApp(this)
-
 
         FirebaseMessaging.getInstance().token
             .addOnCompleteListener(OnCompleteListener { task ->
@@ -60,13 +65,30 @@ class MainActivity : AppCompatActivity() {
                 // You can use the token as needed, for example, to send it to your server
             })
 
-        remoteAPI = RemoteAPI()
+        val remoteAPI = RemoteAPI()
+        val viewModelFactory = MainViewModelFactory(remoteAPI)
+        viewModel = ViewModelProvider(this, viewModelFactory)[MainViewModel::class.java]
 
+        viewPagerAdapter = NewsViewPagerAdapter(this, articles)
+
+        //initialize adapter
         adapter = NewsAdapter(this, articles)
         binding.newsList.adapter = adapter
         binding.newsList.layoutManager = LinearLayoutManager(this)
 
         fetchNews()
+
+        viewModel.articles.observe(this, Observer { articles ->
+            this.articles.clear()
+            this.articles.addAll(articles)
+            adapter.notifyDataSetChanged()
+        })
+
+        viewModel.errorMessage.observe(this, Observer { errorMessage ->
+            Log.e("NetworkError", errorMessage)
+            Toast.makeText(this@MainActivity, errorMessage, Toast.LENGTH_SHORT).show()
+        })
+
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
@@ -77,56 +99,25 @@ class MainActivity : AppCompatActivity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             R.id.action_sort_old_to_new -> {
-                sortArticlesByOldToNew()
+                viewModel.sortArticlesByOldToNew(articles)
+                adapter.notifyDataSetChanged()
                 true
             }
             R.id.action_sort_new_to_old -> {
-                sortArticlesByNewToOld()
+                viewModel.sortArticlesByNewToOld(articles)
+                adapter.notifyDataSetChanged()
                 true
             }
             else -> super.onOptionsItemSelected(item)
         }
     }
 
-    private fun sortArticlesByOldToNew() {
-        articles.sortBy { it.publishedAt }
-        adapter.notifyDataSetChanged()
-    }
-
-    private fun sortArticlesByNewToOld() {
-        articles.sortByDescending { it.publishedAt }
-        adapter.notifyDataSetChanged()
-    }
-
     private fun fetchNews() {
-        // Check network availability before making the request
         if (networkCheck.hasValidInternetConn()) {
-            // Make API call to fetch data
-            remoteAPI.getFact(
-                onSuccess = { articlesList ->
-                    // Update the RecyclerView with the new data
-                    //articles.clear()
-                    Log.e("NetworkError", articlesList.size.toString())
-
-                    runOnUiThread {
-                        articles.addAll(articlesList)
-                        adapter.notifyDataSetChanged()
-                    }
-                },
-                onError = { errorMessage ->
-                    // Handle error case
-                    runOnUiThread {
-
-                        Log.e("NetworkError", errorMessage)
-                        Toast.makeText(this@MainActivity, errorMessage, Toast.LENGTH_SHORT).show()
-                    }
-                }
-            )
+            viewModel.fetchNews(true)
         } else {
-            Toast.makeText(applicationContext, "Network not Available", Toast.LENGTH_SHORT)
-                .show()
+            Toast.makeText(applicationContext, "Network not Available", Toast.LENGTH_SHORT).show()
+            viewModel.fetchNews(false)
         }
     }
-
-
 }

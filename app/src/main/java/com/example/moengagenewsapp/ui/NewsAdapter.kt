@@ -1,3 +1,5 @@
+package com.example.moengagenewsapp.ui
+
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -83,5 +85,6 @@ class NewsAdapter(private val context: Context, private val articles: List<Artic
                 ""
             }
         }
+
     }
 }
